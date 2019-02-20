@@ -1,0 +1,170 @@
+---
+title: "Decision Tree Classification of Breast Cancer Dataset"
+author: "Junyan Huang"
+date: "September 26, 2018"
+output: word_document
+---
+
+## Introduction
+The project is conducted on the breast cancer dataset from UCI Machine Learning Database. The goal of this project is to build a classification model to classify the diagnosis (malignant or benign) of the tumor based on the other 30 attributes such as radius_mean and texture_mean. The project will apply decision tree technique to build the model.
+
+## Import, examine and clean the dataset
+### Import the dataset
+```{r}
+bc = read.csv("D:\\STUDY\\CS_522_Data_Mining\\HW2\\wisc_bc_data.csv")
+```
+
+```{r}
+nrow(bc)
+ncol(bc)
+```
+
+### Metadata
+The dataset has 569 instances and 32 attributes. The attributes are as above.
+Here is the attribute information from UCI site:
+
+1) ID number
+2) Diagnosis (M = malignant, B = benign)
+3-32)
+
+Ten real-valued features are computed for each cell nucleus:
+
+	a) radius (mean of distances from center to points on the perimeter)
+	b) texture (standard deviation of gray-scale values)
+	c) perimeter
+	d) area
+	e) smoothness (local variation in radius lengths)
+	f) compactness (perimeter^2 / area - 1.0)
+	g) concavity (severity of concave portions of the contour)
+	h) concave points (number of concave portions of the contour)
+	i) symmetry 
+	j) fractal dimension ("coastline approximation" - 1)
+
+Several of the papers listed above contain detailed descriptions of
+how these features are computed. 
+
+The mean, standard error, and "worst" or largest (mean of the three
+largest values) of these features were computed for each image,
+resulting in 30 features.  For instance, field 3 is Mean Radius, field
+13 is Radius SE, field 23 is Worst Radius.
+
+All feature values are recoded with four significant digits.
+
+###Check if the dataset has missing values.
+```{r}
+bc[!complete.cases(bc),]
+```
+
+The result shows that the dataset has no missing values.
+
+###Check the statistical summary of the dataset.
+```{r}
+summary(bc)
+```
+
+## Divide the dataset into training set and test set.
+The training set is chosen randonly with 80% of the original dataset, while The test set is the rest.
+```{r}
+n <- nrow(bc)
+n_train <- round(0.8*n)
+library(caret)
+set.seed(123)
+train_indices <- sample(1:n, n_train)
+bc_train <- bc[train_indices, ]
+bc_test <- bc[-train_indices, ]
+round(n*0.8)
+round(n*0.2)
+```
+
+There are 455 observations in the training set and 114 in the test set.
+
+## Train the decision tree.
+I will use the rpart function to build a classification tree. 
+```{r}
+library(rpart)
+library(rpart.plot)
+```
+
+#### Create the model
+```{r}
+bc_model <- rpart(formula=diagnosis ~., data=bc_train, method="class")
+```
+
+### Prune the decision tree to avoid overfitting
+Improve the model by specifying the cost-complexity paramenter (CP)
+```{r}
+print(bc_model$cptable)
+```
+
+Retrieve optimal cp value based on cross-validation error
+```{r}
+opt_index <- which.min(bc_model$cptable[, "xerror"])
+cp_opt <- bc_model$cptable[opt_index, "CP"]
+cp_opt
+```
+The optimal cp value is 0.01 in this model.
+
+Prune the model (to optimized cp value)
+```{r}
+bc_model <- prune(tree = bc_model, 
+                         cp = cp_opt)
+```
+
+
+## Examine and plot the decision tree.
+```{r}
+bc_model
+```
+
+
+```{r}
+rpart.plot(bc_model)
+```
+
+####Interpret the decision tree model:
+
+\n
+The decision tree chooses four attributes out of 32 to build the model: concave.points_worst, radius_worst, texture_mean and area_worst. 
+
+In the root node, it splits the observations by the value of concave.points_worse less than 0.14 or not. When it is yes, it comes to the second node and splits the observations by the value of radius_worst less than 17 or not. If the answer is yes, it predicts the result as benign. Otherwise it continues to the next split and split the observations by texture_mean less than 16 or not. If the answer is yes, it predicts the observations as benign, otherwise as malignant. 
+
+On the right side of the tree, when the answer to concave.points_worst less than 0.14 is no, it comes to the next node and splits the observations by area_worse less than 730 or not. When the answer is yes, it predicts the observations as benign, otherwise as malignant.
+
+####To answer the questions:
+
+\n
+1. How to split the records 
+
+1.1 How to specify the attribute test condition?
+
+The decision tree algorithm is embedded with feature selection, so it will choose the relevant attributes as predictive attributes and avoid using redundant attributes (strongly correlated attributes).
+
+The test condition = degree of impurity of parent node - degree of impurity of child nodes. In the decision tree model above, the attribute test condition is dicided by Gini index because the rpart function in R uses Gini index by default. The larger the gain, the better the test condition. Since the parent impurity is the same for all test conditions, maximizing the gain is equivalent to minimizing the weighted average impurity measures of the child nodes. So the child nodes with smallest Gini index are chosen. In this case, the decision tree chooses these four attributes: concave.points_worst, radius_worst, texture_mean and area_worst.
+
+1.2 How to determine the best split?
+
+The splitting postions in this model are decided by the Gini index. The predictive attributes are all continous data. The best splitting points are the ones with the least Gini index in order to maximum the gain. In this model, the splitting point of concave.points_worst is at 0.14, the one of radius_worst is at 17, for instance.
+
+2. When to stop splitting.
+
+The rpart function uses minsplit = 20 by default. So the model above stops splitting when the number of observations in the node is less than 20. For example, at the splitting postion of texture_mean, the total number of observation is 6% * 455 = 27. Since it is more than 20, the tree continues to split. But after that, the child nodes are only 2% (9 observations) and 4% (18 observations), both less than 20, so the tree stops splitting. 
+
+The model specifies the minucket = round(minsplit/3) = 7 by default. So in each leaf node, the number of observations is no less than 7. For example, in the leaf node of 2% which is the smallest leaf node in the model, the number of observations is 455 * 2% = 9.
+
+The model uses cost complexity pruning technique to avoid overfitting of the tree. The cp value is selected based on the cross-validation error. The best cp value is the one with the least cross-validation error. In this decision tree model, the optimal cp value is 0.01. 
+
+
+## Evaluate the model performance
+Create a confusion matrx
+```{r}
+diagnosis_prediction <- predict(bc_model, bc_test, type="class")
+confusionMatrix(diagnosis_prediction, bc_test$diagnosis)
+```
+
+####Interpret the result:
+
+In the cunfusion matrix outcome, we can see the model has the accuracy rate of 96.49%. It is 95% confident that the accuracy rate is ranged from 91.26% to 99.04%. There are 70 benign observations predicted correctly (sensitivity = 97.22%), 2 benign observations wrongly predicted as malignant, 40 malignant observations predicted correctly (Specificity = 95.24%) and 2 malignant observations wrongly predicted as benign. Overall, the accuracy rate is pretty high.
+
+
+
+
